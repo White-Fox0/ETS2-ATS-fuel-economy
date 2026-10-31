@@ -1,7 +1,5 @@
 # ETS2 / ATS: справочник грузовиков и расход топлива
 
-**Открыть:** https://white-fox0.github.io/ETS2-ATS-fuel-economy/
-
 Одна HTML-страница для Euro Truck Simulator 2 и American Truck Simulator (версия 1.61).
 Работает в браузере, ничего устанавливать не нужно. Данные взяты из файлов игры:
 шасси, двигатели с кривыми момента, КПП, шины.
@@ -35,8 +33,6 @@
 ---
 
 # ETS2 / ATS: truck reference and fuel consumption
-
-**Open:** https://white-fox0.github.io/ETS2-ATS-fuel-economy/
 
 A single HTML page for Euro Truck Simulator 2 and American Truck Simulator (version 1.61).
 Runs in the browser, nothing to install. Data comes from the game files:
