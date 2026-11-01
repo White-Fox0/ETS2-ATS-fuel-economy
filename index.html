@@ -144,7 +144,7 @@ button.ghost { border-color: var(--line); color: var(--muted); }
     <div class="scroll"><table id="eco-list"><thead><tr>
       <th>Модель / шасси</th><th>Двигатель</th><th>КПП · шины</th><th class="n">Об/мин · передача</th><th class="n">Полка</th><th class="n">Расход по ровной</th><th class="n">Макс. подъём на этой передаче</th><th></th>
     </tr></thead><tbody></tbody></table></div>
-    <p class="note">Подбирается самая экономичная сборка на заданной скорости: на любой передаче любой КПП обороты от начала полки до заданного запаса (обычно +50 об/мин), подъём держит. Если это не высшая передача, держи её вручную: автомат может переключиться выше. Расход считается по формуле самой игры (из exe): мощность двигателя плюс его внутреннее трение (20 Н·м на литр объёма), выгоднее всего около 1150 об/мин; шины тягача берутся лучшие. Навык экономии в игре на реальный расход не влияет, только на оценку запаса хода. «Поправка на дорогу» — насколько реальный рейс тратит больше ровной дороги: по трём рейсам от −6 до +14%. Свап без модов невозможен.</p>
+    <p class="note">Подбирается самая экономичная сборка на заданной скорости: на любой передаче любой КПП обороты от начала полки до заданного запаса (обычно +50 об/мин), подъём держит. Если это не высшая передача, держи её вручную: автомат может переключиться выше. Расход считается по формуле самой игры (из exe): мощность двигателя плюс его внутреннее трение (20 Н·м на литр объёма), выгоднее всего около 1150 об/мин; шины тягача берутся лучшие. Коэффициент расхода двигателя (в ATS у части двигателей меньше 1) прямо снижает расход. Навык экономии в игре на реальный расход не влияет, только на оценку запаса хода. «Поправка на дорогу» — насколько реальный рейс тратит больше ровной дороги: по трём рейсам от −6 до +14%. Свап без модов невозможен.</p>
   </section>
 
   <section class="panel" id="compare">
@@ -189,7 +189,7 @@ button.ghost { border-color: var(--line); color: var(--muted); }
       <div class="legend"><span>наведённый двигатель</span><span class="l">остальные</span></div>
     </div>
     <div class="scroll"><table id="eng"><thead><tr>
-      <th>Двигатель</th><th class="n">л.с.</th><th class="n">кВт (расч.)</th><th class="n"><span data-u="tq">Н·м</span></th><th>Полка момента</th><th class="n">Объём, л</th><th class="n">Отсечка</th><th class="n">Моторный тормоз</th><th class="n">Цена, <span class="cur">€</span></th><th class="n">Ур.</th><th></th>
+      <th>Двигатель</th><th class="n">л.с.</th><th class="n">кВт (расч.)</th><th class="n"><span data-u="tq">Н·м</span></th><th>Полка момента</th><th class="n">Объём, л</th><th class="n">Коэф. расхода</th><th class="n">Отсечка</th><th class="n">Моторный тормоз</th><th class="n">Цена, <span class="cur">€</span></th><th class="n">Ур.</th><th></th>
     </tr></thead><tbody></tbody></table></div>
 
     <h3>Коробки передач</h3>
@@ -252,6 +252,10 @@ const fmt = (v, d = 0) => v == null || isNaN(v) ? '—' : Number(v).toLocaleStri
 const range = (a, d = 0) => { a = a.filter(x => x != null && !isNaN(x)); if (!a.length) return '—'; const lo = Math.min(...a), hi = Math.max(...a); return lo === hi ? fmt(lo, d) : fmt(lo, d) + '–' + fmt(hi, d); };
 const src = a => a ? `<span class="tag">${esc(a.replace(/^dlc_/, 'DLC '))}</span>` : `<span class="tag">${L('база', 'base')}</span>`;
 const hpOf = e => e.hp ?? e.calc_hp;
+// engine fuel coefficient: 0.90 means 10% less fuel; most engines have none (1.0)
+const coefCut = e => !e.ev && e.type !== 'electric' && e.consumption_coef > 0 && e.consumption_coef !== 1 ? Math.round((1 - e.consumption_coef) * 100) : 0;
+const coefFull = e => coefCut(e) ? `${fmt(e.consumption_coef, 2)} (−${coefCut(e)}%)` : '—';
+const coefShort = e => coefCut(e) ? ` · ${L('расход', 'fuel')} −${coefCut(e)}%` : '';
 const isEV = t => t.engines.some(e => e.type === 'electric');
 
 /* units: metric or US customary; the math stays metric, only input and output are converted */
@@ -389,6 +393,7 @@ function show(i, scroll) {
     <td class="n"><b>${fmt(uTq(e.torque))}</b></td>
     <td class="sub">${e.defCurve ? `${fmt(1000)}–${fmt(1300)} <span class="tag">${L('кривая по умолчанию', 'default curve')}</span><div>${L('в описании', 'stated')}: ${esc(band)}</div>` : esc(band)}</td>
     <td class="n">${fmt(e.volume, 1)}</td>
+    <td class="n">${coefFull(e)}</td>
     <td class="n">${fmt(e.rpm_limit)}</td>
     <td class="n">${e.engine_brake != null ? fmt(e.engine_brake, 2) + (e.engine_brake_positions ? ` <span class="sub">(${fmt(e.engine_brake_positions)} ${L('пол.', 'pos.')})</span>` : '') : '—'}</td>
     <td class="n">${fmt(e.price)}</td><td class="n">${fmt(e.unlock)}</td><td>${copyBtn(t.id, 'engine', e)}</td></tr>`;
@@ -566,7 +571,7 @@ function renderFit() {
     ${ev.isTop ? '' : `<p class="sub">${L('Это не высшая передача: автомат на круизе может переключиться выше, держи её вручную.', 'This is not the top gear: an automatic may shift up at cruise, hold it manually.')}</p>`}
     <div class="best">
       <div><span class="k">${L('Шасси', 'Chassis')}</span><span class="v">${esc(ev.ch.name)} · ${fMass(ev.ch.mass)}</span><span class="s">${L('по осям', 'per axle')} ${ev.ch.kerb_weight.map(w => fmt(uMass(w))).join(' + ')}</span></div>
-      <div><span class="k">${L('Двигатель', 'Engine')}</span><span class="v">${engLabel(ev.e, eco.ti)}</span><span class="s">${fmt(ev.e.hpv)} ${L('л.с.', 'hp')} · ${fTq(ev.e.torque)} · ${L('полка', 'plateau')} ${fmt(ev.e.plo)}–${fmt(ev.e.phi)}</span><span>${copyBtn(T[ev.e.ti].id, 'engine', ev.e)}</span></div>
+      <div><span class="k">${L('Двигатель', 'Engine')}</span><span class="v">${engLabel(ev.e, eco.ti)}</span><span class="s">${fmt(ev.e.hpv)} ${L('л.с.', 'hp')} · ${fTq(ev.e.torque)} · ${L('полка', 'plateau')} ${fmt(ev.e.plo)}–${fmt(ev.e.phi)}${coefShort(ev.e)}</span><span>${copyBtn(T[ev.e.ti].id, 'engine', ev.e)}</span></div>
       <div><span class="k">${L('КПП', 'Gearbox')}</span><span class="v">${gbLabel(ev.g, eco.ti)}</span><span class="s">${gearName(ev.gear, ev.g.forward.length)} · ${fmt(ev.rpmTop)} ${L('об/мин', 'rpm')}${ev.g.retarder ? ' · ' + L('ретардер', 'retarder') : ''}</span><span>${gbCopy(ev.g)}</span></div>
       <div><span class="k">${L('Шины', 'Tyres')}</span><span class="v">${esc(ev.ft.name)}</span><span class="s">${L('зад', 'rear')}: ${esc(ev.rt.name)}</span></div>
       <div><span class="k">${L('Полка на этой передаче', 'Plateau in this gear')}</span><span class="v">${fmt(uSpd(ev.vEco))}–${fSpd(ev.vPhi)}</span><span class="s">${fmt(ev.e.plo)} ${L('об/мин', 'rpm')} → ${fSpd(ev.vEco)}, ${fmt(ev.e.phi)} → ${fSpd(ev.vPhi)}</span></div>
@@ -620,7 +625,7 @@ function renderEco() {
   $('#eco-list tbody').innerHTML = ECO.length ? ECO.slice(0, 20).map((x, i) => {
     const e = EN[x.b.en], g = GB[x.b.gb];
     return `<tr><td>${esc(T[x.ti].title)}<div class="sub">${esc(CH[x.b.ch].name)}</div></td>
-      <td>${engLabel(e, x.ti)}<div class="sub">${fmt(e.hpv)} ${L('л.с.', 'hp')} · ${fTq(e.torque)}</div></td>
+      <td>${engLabel(e, x.ti)}<div class="sub">${fmt(e.hpv)} ${L('л.с.', 'hp')} · ${fTq(e.torque)}${coefShort(e)}</div></td>
       <td>${gbLabel(g, x.ti)}<div class="sub">${g.forward.length} ${L('ст.', 'sp.')} · ${fmt(g.diff, 2)} · ${L('шины зад', 'rear tyres')} ${esc(TY[x.b.rt].name.split(' ')[0])}</div></td>
       <td class="n">${fmt(x.rpm)}<div class="sub">${gearName(x.b.gear, g.forward.length)}</div></td><td class="n">${fmt(e.plo)}–${fmt(e.phi)}<div class="sub">${fmt(uSpd(vTop(g, TY[x.b.rt], e.plo, x.b.gear)))}–${fSpd(vTop(g, TY[x.b.rt], e.phi, x.b.gear))}</div></td>
       <td class="n"><b>${fuelTxt(x.fuel, e)}</b>${c.dist ? `<div class="sub">${tripTxt(x.fuel, e, c.dist)}</div>` : ''}</td>
@@ -662,7 +667,7 @@ function renderCmp() {
   const rowsSel = [
     [L('Модель', 'Model'), (b, i) => sel('model', i, T.map((t, ti) => `<option value="${ti}"${ti === CH[b.ch].ti ? ' selected' : ''}>${esc(t.title)}</option>`).join(''))],
     [L('Шасси', 'Chassis'), (b, i) => sel('ch', i, opt(CH.map((x, j) => j).filter(j => CH[j].ti === CH[b.ch].ti), b.ch, j => `${CH[j].name} · ${fMass(CH[j].mass)}`))],
-    [L('Двигатель', 'Engine'), (b, i) => sel('en', i, opt(EN.map((x, j) => j).filter(j => c.swap ? true : EN[j].ti === CH[b.ch].ti).sort((x, y) => EN[x].ti - EN[y].ti || EN[x].hpv - EN[y].hpv), b.en, j => `${EN[j].name} · ${fmt(EN[j].hpv)} ${L('л.с.', 'hp')}`, c.swap ? j => T[EN[j].ti].title : null))],
+    [L('Двигатель', 'Engine'), (b, i) => sel('en', i, opt(EN.map((x, j) => j).filter(j => c.swap ? true : EN[j].ti === CH[b.ch].ti).sort((x, y) => EN[x].ti - EN[y].ti || EN[x].hpv - EN[y].hpv), b.en, j => `${EN[j].name} · ${fmt(EN[j].hpv)} ${L('л.с.', 'hp')}${coefShort(EN[j])}`, c.swap ? j => T[EN[j].ti].title : null))],
     [L('КПП', 'Gearbox'), (b, i) => sel('gb', i, opt(GB.map((x, j) => j).filter(j => c.swap ? true : GB[j].ti === CH[b.ch].ti), b.gb, j => `${GB[j].name} · ${GB[j].forward.length} ${L('ст.', 'sp.')} · ${fmt(GB[j].diff, 2)}`, c.swap ? j => T[GB[j].ti].title : null))],
     [L('Передача', 'Gear'), (b, i) => {
       const n = GB[b.gb].forward.length, cur = b.gear != null && b.gear >= 0 && b.gear < n ? b.gear : n - 1;
@@ -677,6 +682,7 @@ function renderCmp() {
     [`${L('Полная масса', 'Gross weight')}, ${UN.ton}`, x => uTon(x.m), v => fmt(v, IMP ? 0 : 1), null],
     [L('Мощность, л.с.', 'Power, hp'), x => x.e.hpv, v => fmt(v), 'max'],
     [`${L('Момент', 'Torque')}, ${UN.tq}`, x => uTq(x.e.torque), v => fmt(v), 'max'],
+    [L('Коэф. расхода двигателя', 'Engine fuel coefficient'), x => x.e.ev ? null : (x.e.consumption_coef || 1), (v, x) => coefFull(x.e), 'min'],
     [L('Полка момента, об/мин', 'Torque plateau, rpm'), x => x.e.ev ? null : x.e.plo, (v, x) => x.e.ev ? L('электро', 'electric') : `${fmt(x.e.plo)}–${fmt(x.e.phi)}`, null],
     [L('Передач / главная пара', 'Gears / final drive'), x => x.g.forward.length, (v, x) => `${v} · ${fmt(x.g.diff, 2)}${x.g.retarder ? ' · ' + L('ретардер', 'retarder') : ''}`, null],
     [`${L('Обороты на', 'Rpm at')} ${fSpd(c.v * 3.6)}`, x => x.rpmTop, (v, x) => `${fmt(v)} ${x.inBand ? `<span class="ok">${L('в полке', 'in plateau')}</span>` : `<span class="sub">${L('вне полки', 'off plateau')}</span>`}`, null],
@@ -770,7 +776,7 @@ const DICT_EN = {
  "Полка": "Plateau",
  "Расход по ровной": "Flat-road fuel",
  "Макс. подъём на этой передаче": "Max grade in this gear",
- "Подбирается самая экономичная сборка на заданной скорости: на любой передаче любой КПП обороты от начала полки до заданного запаса (обычно +50 об/мин), подъём держит. Если это не высшая передача, держи её вручную: автомат может переключиться выше. Расход считается по формуле самой игры (из exe): мощность двигателя плюс его внутреннее трение (20 Н·м на литр объёма), выгоднее всего около 1150 об/мин; шины тягача берутся лучшие. Навык экономии в игре на реальный расход не влияет, только на оценку запаса хода. «Поправка на дорогу» — насколько реальный рейс тратит больше ровной дороги: по трём рейсам от −6 до +14%. Свап без модов невозможен.": "The most economical build at the set speed is picked: any gear of any gearbox between the start of the torque plateau and the set margin (usually +50 rpm), the grade is held. If that is not the top gear, hold it manually: an automatic may shift up. Fuel uses the game's own formula (from the exe): engine power plus its internal friction (20 N·m per litre of displacement), cheapest around 1150 rpm; the best truck tyres are assumed. With realistic fuel consumption on, the Eco driving skill does not change real consumption, only the range estimate. “Road correction” is how much more a real trip uses than a flat road: −6 to +14% over three trips. Swapping is not possible without mods.",
+ "Подбирается самая экономичная сборка на заданной скорости: на любой передаче любой КПП обороты от начала полки до заданного запаса (обычно +50 об/мин), подъём держит. Если это не высшая передача, держи её вручную: автомат может переключиться выше. Расход считается по формуле самой игры (из exe): мощность двигателя плюс его внутреннее трение (20 Н·м на литр объёма), выгоднее всего около 1150 об/мин; шины тягача берутся лучшие. Коэффициент расхода двигателя (в ATS у части двигателей меньше 1) прямо снижает расход. Навык экономии в игре на реальный расход не влияет, только на оценку запаса хода. «Поправка на дорогу» — насколько реальный рейс тратит больше ровной дороги: по трём рейсам от −6 до +14%. Свап без модов невозможен.": "The most economical build at the set speed is picked: any gear of any gearbox between the start of the torque plateau and the set margin (usually +50 rpm), the grade is held. If that is not the top gear, hold it manually: an automatic may shift up. Fuel uses the game's own formula (from the exe): engine power plus its internal friction (20 N·m per litre of displacement), cheapest around 1150 rpm; the best truck tyres are assumed. The engine fuel coefficient (below 1 on some ATS engines) directly cuts consumption. With realistic fuel consumption on, the Eco driving skill does not change real consumption, only the range estimate. “Road correction” is how much more a real trip uses than a flat road: −6 to +14% over three trips. Swapping is not possible without mods.",
  "Сравнение": "Comparison",
  "Добавить колонку": "Add column",
  "Очистить": "Clear",
@@ -807,6 +813,7 @@ const DICT_EN = {
  "кВт (расч.)": "kW (calc.)",
  "Полка момента": "Torque plateau",
  "Объём, л": "Displacement, L",
+ "Коэф. расхода": "Fuel coef.",
  "Отсечка": "Rev limit",
  "Моторный тормоз": "Engine brake",
  "Коробки передач": "Gearboxes",

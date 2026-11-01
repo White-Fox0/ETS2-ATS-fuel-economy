@@ -21,7 +21,7 @@
 
 - M — момент двигателя плюс внутреннее трение (по умолчанию 20 Н·м на литр объёма, растёт с оборотами).
 - Выгоднее держать низкие обороты в начале полки момента.
-- `consumption_coef` обычно 1.0; в ATS у Volvo D13 TC он 0.9 — на 10% меньше топлива.
+- `consumption_coef` обычно 1.0; в ATS у некоторых двигателей он ниже: от 6 до 11% меньше топлива.
 - Навык «Экономичное вождение» в этом режиме на расход не влияет, только на оценку запаса хода.
 
 При выключенном реалистичном расходе топливо списывается по норме
@@ -55,7 +55,7 @@ With "Realistic fuel consumption" on:
 
 - M is engine torque plus internal friction (20 N·m per litre of displacement by default, rising with rpm).
 - Low rpm at the start of the torque plateau is the most economical.
-- `consumption_coef` is usually 1.0; in ATS the Volvo D13 TC engines have 0.9, i.e. 10% less fuel.
+- `consumption_coef` is usually 1.0; some ATS engines have a lower one: 6 to 11% less fuel.
 - In this mode the Eco driving skill does not change consumption, only the range estimate.
 
 With realistic consumption off, fuel is taken at a fixed rate
