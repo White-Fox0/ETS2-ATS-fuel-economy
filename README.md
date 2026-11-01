@@ -8,9 +8,9 @@
 
 - Переключение ETS2 / ATS, русский / английский, единицы км/ч, т, л или mph, lb, gal.
 - Подбор самой экономичной сборки под груз, прицеп и скорость:
-  на высшей передаче обороты в начале полки момента, заданный подъём держит.
+  на любой передаче любой КПП обороты в начале полки момента (запас задаётся), заданный подъём держит.
 - Расход топлива по формуле самой игры (режим «Реалистичный расход топлива»).
-- Сравнение до четырёх сборок; скорость в начале и в конце полки на высшей передаче.
+- Сравнение до четырёх сборок; выбор передачи, скорость в начале и в конце полки.
 - Копирование блока `vehicle_accessory` для сохранения (двигатель, КПП с ретардером и без).
 
 ## Как игра считает расход
@@ -21,7 +21,7 @@
 
 - M — момент двигателя плюс внутреннее трение (по умолчанию 20 Н·м на литр объёма, растёт с оборотами).
 - Выгоднее держать низкие обороты в начале полки момента.
-- `consumption_coef` обычно 1.0.
+- `consumption_coef` обычно 1.0; в ATS у Volvo D13 TC он 0.9 — на 10% меньше топлива.
 - Навык «Экономичное вождение» в этом режиме на расход не влияет, только на оценку запаса хода.
 
 При выключенном реалистичном расходе топливо списывается по норме
@@ -42,9 +42,9 @@ chassis, engines with torque curves, gearboxes, tyres.
 
 - Switch ETS2 / ATS, Russian / English, units km/h, t, L or mph, lb, gal.
 - Finds the most economical build for a cargo, trailer and speed:
-  top gear at the start of the torque plateau, holding the set grade.
+  any gear of any gearbox at the start of the torque plateau (the margin is adjustable), holding the set grade.
 - Fuel consumption by the game's own formula ("Realistic fuel consumption" mode).
-- Compare up to four builds; speed at the start and end of the plateau in top gear.
+- Compare up to four builds; gear choice, speed at the start and end of the plateau.
 - Copy a `vehicle_accessory` block for the save (engine, gearbox with or without retarder).
 
 ## How the game calculates fuel
@@ -55,7 +55,7 @@ With "Realistic fuel consumption" on:
 
 - M is engine torque plus internal friction (20 N·m per litre of displacement by default, rising with rpm).
 - Low rpm at the start of the torque plateau is the most economical.
-- `consumption_coef` is usually 1.0.
+- `consumption_coef` is usually 1.0; in ATS the Volvo D13 TC engines have 0.9, i.e. 10% less fuel.
 - In this mode the Eco driving skill does not change consumption, only the range estimate.
 
 With realistic consumption off, fuel is taken at a fixed rate

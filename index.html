@@ -133,6 +133,7 @@ button.ghost { border-color: var(--line); color: var(--muted); }
       <div class="fld"><label for="c-ttyre">Шины прицепа</label><select id="c-ttyre"></select></div>
       <div class="fld"><label for="c-spd">Скорость, <span data-u="spd">км/ч</span></label><input id="c-spd" type="number" min="30" max="130" step="1" value="80"></div>
       <div class="fld"><label for="c-grd">Держать на подъёме, %</label><input id="c-grd" type="number" min="0" max="8" step="0.5" value="2"></div>
+      <div class="fld"><label for="c-band">Запас от начала полки, об/мин</label><input id="c-band" type="number" min="0" max="500" step="10" value="50"></div>
       <div class="fld"><label for="c-dist">Маршрут, <span data-u="dist">км</span></label><input id="c-dist" type="number" min="0" step="1" placeholder="—"></div>
       <div class="fld"><label for="c-corr">Поправка на дорогу, %</label><input id="c-corr" type="number" min="-50" max="100" step="1" value="5"></div>
       <div class="fld"><label for="c-model">Грузовик</label><select id="c-model"><option value="-1">любой</option></select></div>
@@ -141,9 +142,9 @@ button.ghost { border-color: var(--line); color: var(--muted); }
     <div id="fit-best"></div>
     <h3 id="eco-title">Экономичнее всего на заданной скорости</h3>
     <div class="scroll"><table id="eco-list"><thead><tr>
-      <th>Модель / шасси</th><th>Двигатель</th><th>КПП · шины</th><th class="n">Об/мин на высшей</th><th class="n">Полка</th><th class="n">Расход по ровной</th><th class="n">Макс. подъём на высшей</th><th></th>
+      <th>Модель / шасси</th><th>Двигатель</th><th>КПП · шины</th><th class="n">Об/мин · передача</th><th class="n">Полка</th><th class="n">Расход по ровной</th><th class="n">Макс. подъём на этой передаче</th><th></th>
     </tr></thead><tbody></tbody></table></div>
-    <p class="note">Подбирается самая экономичная сборка на заданной скорости: на высшей передаче обороты от начала полки до +50 об/мин, подъём держит. Расход считается по формуле самой игры (из exe): мощность двигателя плюс его внутреннее трение (20 Н·м на литр объёма), выгоднее всего около 1150 об/мин; шины тягача берутся лучшие. Навык экономии в игре на реальный расход не влияет, только на оценку запаса хода. «Поправка на дорогу» — насколько реальный рейс тратит больше ровной дороги: по трём рейсам от −6 до +14%. Свап без модов невозможен.</p>
+    <p class="note">Подбирается самая экономичная сборка на заданной скорости: на любой передаче любой КПП обороты от начала полки до заданного запаса (обычно +50 об/мин), подъём держит. Если это не высшая передача, держи её вручную: автомат может переключиться выше. Расход считается по формуле самой игры (из exe): мощность двигателя плюс его внутреннее трение (20 Н·м на литр объёма), выгоднее всего около 1150 об/мин; шины тягача берутся лучшие. Навык экономии в игре на реальный расход не влияет, только на оценку запаса хода. «Поправка на дорогу» — насколько реальный рейс тратит больше ровной дороги: по трём рейсам от −6 до +14%. Свап без модов невозможен.</p>
   </section>
 
   <section class="panel" id="compare">
@@ -270,6 +271,26 @@ const fTon = kg => `${fmt(uTon(kg), IMP ? 0 : 1)} ${UN.ton}`;
 const fTq = nm => `${fmt(uTq(nm))} ${UN.tq}`;
 document.querySelectorAll('[data-u]').forEach(x => { x.textContent = UN[x.dataset.u]; });
 
+/* engines without torque_curve (older ETS2 trucks) use the game's default curve and rpm_limit 2500
+   (modding wiki, accessory_engine_data; the same constants in eurotrucks2.exe 1.61, FUN_140b732ca) */
+const DEF_CURVE = [[300, 0], [440, 0.5], [1000, 1], [1300, 1], [1900, 0.77], [2400, 0.4], [2600, 0]];
+T.forEach(t => t.engines.forEach(e => {
+  if (!e.rpm_limit) e.rpm_limit = 2500;
+  if (e.curve && e.curve.length >= 2) return;
+  e.curve = DEF_CURVE; e.defCurve = true;
+  let best = 0;
+  for (let rpm = 0; rpm <= e.rpm_limit; rpm += 10) {
+    let f = 0;
+    for (let i = 1; i < DEF_CURVE.length; i++) if (rpm <= DEF_CURVE[i][0]) {
+      const [r1, f1] = DEF_CURVE[i - 1], [r2, f2] = DEF_CURVE[i];
+      f = rpm < r1 ? 0 : f1 + (f2 - f1) * (rpm - r1) / (r2 - r1); break;
+    }
+    const kw = e.torque * f * rpm * 2 * Math.PI / 60 / 1000;
+    if (kw > best) { best = kw; e.calc_rpm = rpm; }
+  }
+  e.calc_kw = Math.round(best); e.calc_hp = Math.round(best / 0.7355);
+}));
+
 T.sort((a, b) => a.title.localeCompare(b.title));
 
 /* ===== copy a vehicle_accessory block for game.sii ===== */
@@ -366,7 +387,7 @@ function show(i, scroll) {
     <td class="n"><b>${fmt(hpOf(e))}</b></td>
     <td class="n">${fmt(e.calc_kw)}<div class="sub">@ ${fmt(e.calc_rpm)}</div></td>
     <td class="n"><b>${fmt(uTq(e.torque))}</b></td>
-    <td class="sub">${esc(band)}</td>
+    <td class="sub">${e.defCurve ? `${fmt(1000)}–${fmt(1300)} <span class="tag">${L('кривая по умолчанию', 'default curve')}</span><div>${L('в описании', 'stated')}: ${esc(band)}</div>` : esc(band)}</td>
     <td class="n">${fmt(e.volume, 1)}</td>
     <td class="n">${fmt(e.rpm_limit)}</td>
     <td class="n">${e.engine_brake != null ? fmt(e.engine_brake, 2) + (e.engine_brake_positions ? ` <span class="sub">(${fmt(e.engine_brake_positions)} ${L('пол.', 'pos.')})</span>` : '') : '—'}</td>
@@ -473,6 +494,7 @@ function cond() {
   FUEL_K = 1 + Math.max(-90, n('#c-corr', 0)) / 100;
   CRR_TRL = (TRL_TYRES[parseInt($('#c-ttyre').value, 10)] || TRL_TYRES[0])[1] / 1000;
   AXLES = Math.min(8, Math.max(0, n('#c-axles', 3)));
+  ECO_BAND = Math.max(0, n('#c-band', 50));
   const sel = id => { const v = parseInt($(id).value, 10); return isNaN(v) ? -1 : v; };
   const kg = x => IMP ? x / LB : x * 1000;
   return {cargo: kg(n('#c-cargo', IMP ? 44000 : 20)), trl: kg(n('#c-trl', IMP ? 6600 : 3)), v: n('#c-spd', IMP ? 50 : 80) * (IMP ? MI : 1) / 3.6, grade: n('#c-grd', 2) / 100,
@@ -485,7 +507,9 @@ function forceAB(mt, crrT, v, grade) {
 }
 const crrOf = (fi, ri) => (TY[fi].roll_resistance + TY[ri].roll_resistance) / 2000;
 const wheelRpm = (v, r) => v / r * 60 / (2 * Math.PI);
-const vTop = (g, rt, rpm) => rpm / (g.forward[g.forward.length - 1] * g.diff) / 60 * 2 * Math.PI * rt.r * 3.6;  // km/h on the top gear
+const vTop = (g, rt, rpm, gear = g.forward.length - 1) => rpm / (g.forward[gear] * g.diff) / 60 * 2 * Math.PI * rt.r * 3.6;  // km/h in a gear, top by default
+const gearName = (k, n) => k === n - 1 ? L(`${n}-я (высшая)`, `gear ${n} (top)`) : L(`${k + 1}-я из ${n}`, `gear ${k + 1} of ${n}`);
+const inGear = x => x.isTop ? L('на высшей', 'in top gear') : L(`на ${x.gear + 1}-й`, `in gear ${x.gear + 1}`);
 
 /* full evaluation of one build */
 function evaluate(b, c) {
@@ -493,7 +517,7 @@ function evaluate(b, c) {
   const crrT = crrOf(b.ft, b.rt), tc = c.trl + c.cargo, m = ch.mass + tc;
   const fg = forceAB(ch.mass, crrT, c.v, c.grade), f0 = forceAB(ch.mass, crrT, c.v, 0);
   const need = (fg.a + fg.b * tc) * c.v / ETA / 1000, needFlat = (f0.a + f0.b * tc) * c.v / ETA / 1000;
-  const wr = wheelRpm(c.v, rt.r), top = g.forward.length - 1;
+  const wr = wheelRpm(c.v, rt.r), top = b.gear != null && b.gear >= 0 && b.gear < g.forward.length ? b.gear : g.forward.length - 1;
   const rpmTop = wr * g.forward[top] * g.diff, kwTop = kwAt(e, rpmTop);
   // best gear for this speed (max power)
   let bestKw = 0, bestGear = -1;
@@ -506,11 +530,11 @@ function evaluate(b, c) {
   const vmax = e.lim / (g.forward[top] * g.diff) / 60 * 2 * Math.PI * rt.r * 3.6;
   // most economical cruise: top gear at the start of the torque plateau
   const rpmEco = e.ev ? null : e.plo;
-  const vEco = e.ev ? null : vTop(g, rt, rpmEco), vPhi = e.ev ? null : vTop(g, rt, e.phi);
+  const vEco = e.ev ? null : vTop(g, rt, rpmEco, top), vPhi = e.ev ? null : vTop(g, rt, e.phi, top);
   let fuelEco = null;
   if (!e.ev) { const v = vEco / 3.6, f = forceAB(ch.mass, crrT, v, 0); fuelEco = fuelFlat(e, (f.a + f.b * tc) * v / ETA / 1000, rpmEco, v); }
   const fuel = fuelFlat(e, needFlat, rpmTop, c.v);
-  return {ch, e, g, ft, rt, m, need, needFlat, fuel, rpmTop, kwTop, bestKw, bestGear, gradeTop: gradeAt(kwTop), gradeBest: gradeAt(bestKw),
+  return {ch, e, g, ft, rt, m, gear: top, isTop: top === g.forward.length - 1, need, needFlat, fuel, rpmTop, kwTop, bestKw, bestGear, gradeTop: gradeAt(kwTop), gradeBest: gradeAt(bestKw),
           maxCargo, startGrade, vmax, vEco, vPhi, rpmEco, fuelEco, inBand: rpmTop >= e.plo && rpmTop <= e.phi, holds: kwTop >= need};
 }
 
@@ -530,30 +554,31 @@ function renderFit() {
   const c = cond(), eco = optimizeEco(c)[0];
   const box = $('#fit-best');
   if (!eco) {
-    box.innerHTML = `<p class="no">${L(`На ${fSpd(c.v * 3.6)} ни одна сборка не держит высшую передачу в начале полки (+${ECO_BAND} об/мин) с подъёмом ${fmt(c.grade * 100, 1)}% и грузом ${fTon(c.cargo)}. Попробуйте другую скорость, меньший подъём или включите свап.`,
-      `At ${fSpd(c.v * 3.6)} no build keeps top gear at the start of the torque plateau (+${ECO_BAND} rpm) on a ${fmt(c.grade * 100, 1)}% grade with ${fTon(c.cargo)} of cargo. Try another speed, a smaller grade or enable the swap.`)}</p>`;
+    box.innerHTML = `<p class="no">${L(`На ${fSpd(c.v * 3.6)} ни у одной сборки нет передачи в начале полки (+${ECO_BAND} об/мин) с подъёмом ${fmt(c.grade * 100, 1)}% и грузом ${fTon(c.cargo)}. Попробуйте другую скорость, меньший подъём или включите свап.`,
+      `At ${fSpd(c.v * 3.6)} no build has a gear at the start of the torque plateau (+${ECO_BAND} rpm) on a ${fmt(c.grade * 100, 1)}% grade with ${fTon(c.cargo)} of cargo. Try another speed, a smaller grade or enable the swap.`)}</p>`;
     return;
   }
   const ev = evaluate(eco.b, c), t = T[eco.ti];
   box.innerHTML = `<div class="best-head"><div class="verdict">${esc(t.title)}, ${esc(ev.ch.name)} <small>${L('полная масса', 'gross weight')} ${fTon(ev.m)}</small></div>
     <button type="button" class="solid" data-eco="0">${L('В сравнение', 'Compare')}</button></div>
-    <p class="sub">${L(`Самая экономичная на ${fSpd(c.v * 3.6)}: на высшей ${fmt(ev.rpmTop)} об/мин при начале полки ${fmt(ev.e.plo)} (не выше +${ECO_BAND}), подъём ${fmt(c.grade * 100, 1)}% держит.`,
-      `Most economical at ${fSpd(c.v * 3.6)}: ${fmt(ev.rpmTop)} rpm in top gear, torque plateau starts at ${fmt(ev.e.plo)} (at most +${ECO_BAND}), holds a ${fmt(c.grade * 100, 1)}% grade.`)}</p>
+    <p class="sub">${L(`Самая экономичная на ${fSpd(c.v * 3.6)}: ${inGear(ev)} ${fmt(ev.rpmTop)} об/мин при начале полки ${fmt(ev.e.plo)} (не выше +${ECO_BAND}), подъём ${fmt(c.grade * 100, 1)}% держит.`,
+      `Most economical at ${fSpd(c.v * 3.6)}: ${fmt(ev.rpmTop)} rpm ${inGear(ev)}, torque plateau starts at ${fmt(ev.e.plo)} (at most +${ECO_BAND}), holds a ${fmt(c.grade * 100, 1)}% grade.`)}</p>
+    ${ev.isTop ? '' : `<p class="sub">${L('Это не высшая передача: автомат на круизе может переключиться выше, держи её вручную.', 'This is not the top gear: an automatic may shift up at cruise, hold it manually.')}</p>`}
     <div class="best">
       <div><span class="k">${L('Шасси', 'Chassis')}</span><span class="v">${esc(ev.ch.name)} · ${fMass(ev.ch.mass)}</span><span class="s">${L('по осям', 'per axle')} ${ev.ch.kerb_weight.map(w => fmt(uMass(w))).join(' + ')}</span></div>
       <div><span class="k">${L('Двигатель', 'Engine')}</span><span class="v">${engLabel(ev.e, eco.ti)}</span><span class="s">${fmt(ev.e.hpv)} ${L('л.с.', 'hp')} · ${fTq(ev.e.torque)} · ${L('полка', 'plateau')} ${fmt(ev.e.plo)}–${fmt(ev.e.phi)}</span><span>${copyBtn(T[ev.e.ti].id, 'engine', ev.e)}</span></div>
-      <div><span class="k">${L('КПП', 'Gearbox')}</span><span class="v">${gbLabel(ev.g, eco.ti)}</span><span class="s">${L(`${ev.g.forward.length}-я (высшая)`, `gear ${ev.g.forward.length} (top)`)} · ${fmt(ev.rpmTop)} ${L('об/мин', 'rpm')}${ev.g.retarder ? ' · ' + L('ретардер', 'retarder') : ''}</span><span>${gbCopy(ev.g)}</span></div>
+      <div><span class="k">${L('КПП', 'Gearbox')}</span><span class="v">${gbLabel(ev.g, eco.ti)}</span><span class="s">${gearName(ev.gear, ev.g.forward.length)} · ${fmt(ev.rpmTop)} ${L('об/мин', 'rpm')}${ev.g.retarder ? ' · ' + L('ретардер', 'retarder') : ''}</span><span>${gbCopy(ev.g)}</span></div>
       <div><span class="k">${L('Шины', 'Tyres')}</span><span class="v">${esc(ev.ft.name)}</span><span class="s">${L('зад', 'rear')}: ${esc(ev.rt.name)}</span></div>
-      <div><span class="k">${L('Полка на высшей', 'Plateau in top gear')}</span><span class="v">${fmt(uSpd(ev.vEco))}–${fSpd(ev.vPhi)}</span><span class="s">${fmt(ev.e.plo)} ${L('об/мин', 'rpm')} → ${fSpd(ev.vEco)}, ${fmt(ev.e.phi)} → ${fSpd(ev.vPhi)}</span></div>
+      <div><span class="k">${L('Полка на этой передаче', 'Plateau in this gear')}</span><span class="v">${fmt(uSpd(ev.vEco))}–${fSpd(ev.vPhi)}</span><span class="s">${fmt(ev.e.plo)} ${L('об/мин', 'rpm')} → ${fSpd(ev.vEco)}, ${fmt(ev.e.phi)} → ${fSpd(ev.vPhi)}</span></div>
       <div><span class="k">${L('Мощность на', 'Power at')} ${fSpd(c.v * 3.6)}</span><span class="v">${fmt(ev.kwTop)} ${L('из', 'of')} ${fmt(ev.need)} ${L('кВт', 'kW')}</span><span class="s">${L('по ровной нужно', 'flat road needs')} ${fmt(ev.needFlat)} ${L('кВт', 'kW')}</span></div>
-      <div><span class="k">${L('Макс. груз', 'Max cargo')}</span><span class="v">${fTon(Math.max(0, ev.maxCargo))}</span><span class="s">${L('при тех же условиях, на высшей', 'same conditions, top gear')}</span></div>
-      <div><span class="k">${L('Расход по ровной', 'Flat-road fuel')}</span><span class="v">≈ ${fuelTxt(ev.fuel, ev.e)}</span><span class="s">${fSpd(c.v * 3.6)} ${L('на высшей', 'in top gear')}, ${fmt(ev.rpmTop)} ${L('об/мин', 'rpm')}${c.dist ? ` · ≈ ${tripTxt(ev.fuel, ev.e, c.dist)}` : ''}</span></div>
+      <div><span class="k">${L('Макс. груз', 'Max cargo')}</span><span class="v">${fTon(Math.max(0, ev.maxCargo))}</span><span class="s">${L('при тех же условиях, на этой передаче', 'same conditions, this gear')}</span></div>
+      <div><span class="k">${L('Расход по ровной', 'Flat-road fuel')}</span><span class="v">≈ ${fuelTxt(ev.fuel, ev.e)}</span><span class="s">${fSpd(c.v * 3.6)} ${inGear(ev)}, ${fmt(ev.rpmTop)} ${L('об/мин', 'rpm')}${c.dist ? ` · ≈ ${tripTxt(ev.fuel, ev.e, c.dist)}` : ''}</span></div>
     </div>`;
 }
 
 /* ===== economy pick: for the set speed, the build whose top gear sits in the torque plateau
    (closest to its start) with the lowest flat-road fuel; one row per model ===== */
-const ECO_BAND = 50;  // economical = top gear at most this many rpm above the start of the torque plateau
+let ECO_BAND = 50;  // economical = at most this many rpm above the start of the torque plateau, set in cond()
 function optimizeEco(c) {
   const ft = FT[0], tc = c.trl + c.cargo;
   const rears = [], seen = new Set();
@@ -570,9 +595,8 @@ function optimizeEco(c) {
       if (e.ev || (!c.swap && e.ti !== ti)) return;
       GB.forEach((g, gi) => {
         if (g.ev || (!c.swap && g.ti !== e.ti) || g.stall_torque_ratio) return;
-        const top = g.forward.length - 1;
-        for (const ri of rears) {
-          const rpm = wheelRpm(c.v, TY[ri].r) * g.forward[top] * g.diff;
+        for (let k = g.forward.length - 1; k >= 0; k--) for (const ri of rears) {  // from the top gear down: on a tie the higher gear stays
+          const rpm = wheelRpm(c.v, TY[ri].r) * g.forward[k] * g.diff;
           if (rpm < e.plo || rpm > e.plo + ECO_BAND) continue;
           const crrT = crrOf(ft, ri), f0 = forceAB(ch.mass, crrT, c.v, 0), fg = forceAB(ch.mass, crrT, c.v, c.grade);
           const kw = kwAt(e, rpm), need = (f0.a + f0.b * tc) * c.v / ETA / 1000;
@@ -580,7 +604,7 @@ function optimizeEco(c) {
           const fuel = fuelFlat(e, need, rpm, c.v);
           const grade = (kw * 1000 * ETA / c.v - (f0.a + f0.b * tc)) / ((ch.mass + tc) * G) * 100;
           if (!best || fuel < best.fuel - 1e-9 || (Math.abs(fuel - best.fuel) < 1e-9 && rpm - e.plo < best.rpm - EN[best.b.en].plo))
-            best = {ti, b: {ch: chi, en: ei, gb: gi, ft, rt: ri}, rpm, fuel, grade};
+            best = {ti, b: {ch: chi, en: ei, gb: gi, ft, rt: ri, gear: k}, rpm, fuel, grade};
         }
       });
     });
@@ -592,29 +616,29 @@ let ECO = [];
 function renderEco() {
   const c = cond();
   ECO = optimizeEco(c);
-  $('#eco-title').textContent = L(`Экономичнее всего на ${fSpd(c.v * 3.6)} (высшая: от начала полки до +${ECO_BAND} об/мин)`, `Most economical at ${fSpd(c.v * 3.6)} (top gear: plateau start to +${ECO_BAND} rpm)`);
+  $('#eco-title').textContent = L(`Экономичнее всего на ${fSpd(c.v * 3.6)} (от начала полки до +${ECO_BAND} об/мин)`, `Most economical at ${fSpd(c.v * 3.6)} (plateau start to +${ECO_BAND} rpm)`);
   $('#eco-list tbody').innerHTML = ECO.length ? ECO.slice(0, 20).map((x, i) => {
     const e = EN[x.b.en], g = GB[x.b.gb];
     return `<tr><td>${esc(T[x.ti].title)}<div class="sub">${esc(CH[x.b.ch].name)}</div></td>
       <td>${engLabel(e, x.ti)}<div class="sub">${fmt(e.hpv)} ${L('л.с.', 'hp')} · ${fTq(e.torque)}</div></td>
       <td>${gbLabel(g, x.ti)}<div class="sub">${g.forward.length} ${L('ст.', 'sp.')} · ${fmt(g.diff, 2)} · ${L('шины зад', 'rear tyres')} ${esc(TY[x.b.rt].name.split(' ')[0])}</div></td>
-      <td class="n">${fmt(x.rpm)}</td><td class="n">${fmt(e.plo)}–${fmt(e.phi)}<div class="sub">${fmt(uSpd(vTop(g, TY[x.b.rt], e.plo)))}–${fSpd(vTop(g, TY[x.b.rt], e.phi))}</div></td>
+      <td class="n">${fmt(x.rpm)}<div class="sub">${gearName(x.b.gear, g.forward.length)}</div></td><td class="n">${fmt(e.plo)}–${fmt(e.phi)}<div class="sub">${fmt(uSpd(vTop(g, TY[x.b.rt], e.plo, x.b.gear)))}–${fSpd(vTop(g, TY[x.b.rt], e.phi, x.b.gear))}</div></td>
       <td class="n"><b>${fuelTxt(x.fuel, e)}</b>${c.dist ? `<div class="sub">${tripTxt(x.fuel, e, c.dist)}</div>` : ''}</td>
       <td class="n">${fmt(x.grade, 1)}%</td>
       <td><button type="button" data-eco="${i}">${L('Сравнить', 'Compare')}</button></td></tr>`;
-  }).join('') : `<tr><td colspan="8" class="sub">${L(`Нет сборки, у которой на ${fSpd(c.v * 3.6)} высшая передача не выше начала полки +${ECO_BAND} об/мин и держит подъём ${fmt(c.grade * 100, 1)}%. Попробуйте другую скорость, меньший подъём или включите свап.`,
-      `No build at ${fSpd(c.v * 3.6)} has top gear within plateau start +${ECO_BAND} rpm and holds a ${fmt(c.grade * 100, 1)}% grade. Try another speed, a smaller grade or enable the swap.`)}</td></tr>`;
+  }).join('') : `<tr><td colspan="8" class="sub">${L(`Нет сборки, у которой на ${fSpd(c.v * 3.6)} есть передача не выше начала полки +${ECO_BAND} об/мин и которая держит подъём ${fmt(c.grade * 100, 1)}%. Попробуйте другую скорость, меньший подъём или включите свап.`,
+      `No build at ${fSpd(c.v * 3.6)} has a gear within plateau start +${ECO_BAND} rpm and holds a ${fmt(c.grade * 100, 1)}% grade. Try another speed, a smaller grade or enable the swap.`)}</td></tr>`;
 }
 
 /* ===== comparison ===== */
 let CMP = [];
-function saveCmp() { try { localStorage.setItem(KEY + '-cmp', JSON.stringify(CMP.map(b => ({ch: CH[b.ch].ti + ':' + CH[b.ch].file, en: EN[b.en].ti + ':' + EN[b.en].file, gb: GB[b.gb].ti + ':' + GB[b.gb].file, ft: TY[b.ft].arc + ':' + TY[b.ft].file, rt: TY[b.rt].arc + ':' + TY[b.rt].file})))); } catch (e) {} }
+function saveCmp() { try { localStorage.setItem(KEY + '-cmp', JSON.stringify(CMP.map(b => ({ch: CH[b.ch].ti + ':' + CH[b.ch].file, en: EN[b.en].ti + ':' + EN[b.en].file, gb: GB[b.gb].ti + ':' + GB[b.gb].file, ft: TY[b.ft].arc + ':' + TY[b.ft].file, rt: TY[b.rt].arc + ':' + TY[b.rt].file, gear: b.gear})))); } catch (e) {} }
 function loadCmp() {
   try {
     const s = JSON.parse(localStorage.getItem(KEY + '-cmp') || '[]');
     const find = (arr, key, f) => arr.findIndex(x => f(x) === key);
     CMP = s.map(o => ({ch: find(CH, o.ch, x => x.ti + ':' + x.file), en: find(EN, o.en, x => x.ti + ':' + x.file), gb: find(GB, o.gb, x => x.ti + ':' + x.file),
-                       ft: find(TY, o.ft, x => x.arc + ':' + x.file), rt: find(TY, o.rt, x => x.arc + ':' + x.file)}))
+                       ft: find(TY, o.ft, x => x.arc + ':' + x.file), rt: find(TY, o.rt, x => x.arc + ':' + x.file), gear: o.gear}))
       .filter(b => b.ch >= 0 && b.en >= 0 && b.gb >= 0 && b.ft >= 0 && b.rt >= 0);
   } catch (e) { CMP = []; }
 }
@@ -640,6 +664,10 @@ function renderCmp() {
     [L('Шасси', 'Chassis'), (b, i) => sel('ch', i, opt(CH.map((x, j) => j).filter(j => CH[j].ti === CH[b.ch].ti), b.ch, j => `${CH[j].name} · ${fMass(CH[j].mass)}`))],
     [L('Двигатель', 'Engine'), (b, i) => sel('en', i, opt(EN.map((x, j) => j).filter(j => c.swap ? true : EN[j].ti === CH[b.ch].ti).sort((x, y) => EN[x].ti - EN[y].ti || EN[x].hpv - EN[y].hpv), b.en, j => `${EN[j].name} · ${fmt(EN[j].hpv)} ${L('л.с.', 'hp')}`, c.swap ? j => T[EN[j].ti].title : null))],
     [L('КПП', 'Gearbox'), (b, i) => sel('gb', i, opt(GB.map((x, j) => j).filter(j => c.swap ? true : GB[j].ti === CH[b.ch].ti), b.gb, j => `${GB[j].name} · ${GB[j].forward.length} ${L('ст.', 'sp.')} · ${fmt(GB[j].diff, 2)}`, c.swap ? j => T[GB[j].ti].title : null))],
+    [L('Передача', 'Gear'), (b, i) => {
+      const n = GB[b.gb].forward.length, cur = b.gear != null && b.gear >= 0 && b.gear < n ? b.gear : n - 1;
+      return sel('gear', i, [...Array(n).keys()].reverse().map(k => `<option value="${k}"${k === cur ? ' selected' : ''}>${gearName(k, n)}</option>`).join(''));
+    }],
     [L('Шина перед', 'Front tyre'), (b, i) => sel('ft', i, opt(FT, b.ft, j => `${TY[j].name} · ${fmt(TY[j].roll_resistance, 1)}`))],
     [L('Шина зад', 'Rear tyre'), (b, i) => sel('rt', i, opt(RT, b.rt, j => `${TY[j].name} · ${fmt(TY[j].roll_resistance, 1)}`))],
   ];
@@ -651,15 +679,15 @@ function renderCmp() {
     [`${L('Момент', 'Torque')}, ${UN.tq}`, x => uTq(x.e.torque), v => fmt(v), 'max'],
     [L('Полка момента, об/мин', 'Torque plateau, rpm'), x => x.e.ev ? null : x.e.plo, (v, x) => x.e.ev ? L('электро', 'electric') : `${fmt(x.e.plo)}–${fmt(x.e.phi)}`, null],
     [L('Передач / главная пара', 'Gears / final drive'), x => x.g.forward.length, (v, x) => `${v} · ${fmt(x.g.diff, 2)}${x.g.retarder ? ' · ' + L('ретардер', 'retarder') : ''}`, null],
-    [`${L('Обороты на', 'Rpm at')} ${fSpd(c.v * 3.6)}, ${L('высшая', 'top gear')}`, x => x.rpmTop, (v, x) => `${fmt(v)} ${x.inBand ? `<span class="ok">${L('в полке', 'in plateau')}</span>` : `<span class="sub">${L('вне полки', 'off plateau')}</span>`}`, null],
-    [L('Мощность на высшей, кВт', 'Top-gear power, kW'), x => x.kwTop, v => fmt(v), 'max'],
+    [`${L('Обороты на', 'Rpm at')} ${fSpd(c.v * 3.6)}`, x => x.rpmTop, (v, x) => `${fmt(v)} ${x.inBand ? `<span class="ok">${L('в полке', 'in plateau')}</span>` : `<span class="sub">${L('вне полки', 'off plateau')}</span>`}`, null],
+    [L('Мощность на этой передаче, кВт', 'Power in this gear, kW'), x => x.kwTop, v => fmt(v), 'max'],
     [`${L('Нужно на подъёме', 'Needed on')} ${fmt(c.grade * 100, 1)}%${L('', ' grade')}, ${L('кВт', 'kW')}`, x => x.need, (v, x) => `${fmt(v)} ${x.holds ? `<span class="ok">${L('держит', 'holds')}</span>` : `<span class="no">${L('не держит', 'fails')}</span>`}`, 'min'],
-    [L('Макс. подъём на высшей, %', 'Max grade in top gear, %'), x => x.gradeTop, v => fmt(v, 1), 'max'],
+    [L('Макс. подъём на этой передаче, %', 'Max grade in this gear, %'), x => x.gradeTop, v => fmt(v, 1), 'max'],
     [L('Макс. подъём с переключением, %', 'Max grade with downshift, %'), x => x.gradeBest, (v, x) => `${fmt(v, 1)} <span class="sub">(${L(`${x.bestGear + 1}-я`, `gear ${x.bestGear + 1}`)})</span>`, 'max'],
     [`${L('Макс. груз при условиях', 'Max cargo, same conditions')}, ${UN.ton}`, x => uTon(Math.max(0, x.maxCargo)), v => fmt(v, IMP ? 0 : 1), 'max'],
-    [`${L('Скорость на отсечке, высшая', 'Speed at rev limit, top gear')}, ${UN.spd}`, x => uSpd(x.vmax), v => fmt(v), 'max'],
-    [`${L('Скорость в начале полки на высшей', 'Speed at plateau start, top gear')}, ${UN.spd}`, x => uSpd(x.vEco), (v, x) => v == null ? '—' : `${fmt(v)} <span class="sub">(${fmt(x.rpmEco)} ${L('об/мин', 'rpm')})</span>`, null],
-    [`${L('Скорость в конце полки на высшей', 'Speed at plateau end, top gear')}, ${UN.spd}`, x => uSpd(x.vPhi), (v, x) => v == null ? '—' : `${fmt(v)} <span class="sub">(${fmt(x.e.phi)} ${L('об/мин', 'rpm')})</span>`, null],
+    [`${L('Скорость на отсечке', 'Speed at rev limit')}, ${UN.spd}`, x => uSpd(x.vmax), v => fmt(v), 'max'],
+    [`${L('Скорость в начале полки', 'Speed at plateau start')}, ${UN.spd}`, x => uSpd(x.vEco), (v, x) => v == null ? '—' : `${fmt(v)} <span class="sub">(${fmt(x.rpmEco)} ${L('об/мин', 'rpm')})</span>`, null],
+    [`${L('Скорость в конце полки', 'Speed at plateau end')}, ${UN.spd}`, x => uSpd(x.vPhi), (v, x) => v == null ? '—' : `${fmt(v)} <span class="sub">(${fmt(x.e.phi)} ${L('об/мин', 'rpm')})</span>`, null],
     [L('Расход на этой скорости (оценка)', 'Fuel at that speed (estimate)'), x => x.fuelEco, (v, x) => v == null ? '—' : fuelTxt(v, x.e), null],
     [`${L('Расход по ровной на', 'Flat-road fuel at')} ${fSpd(c.v * 3.6)} (${L('оценка', 'estimate')})`, x => x.e.ev ? null : x.fuel, (v, x) => fuelTxt(x.fuel, x.e), 'min'],
     [L('Сопротивление шин, кг/т', 'Tyre rolling resistance, kg/t'), x => (x.ft.roll_resistance + x.rt.roll_resistance) / 2, v => fmt(v, 1), 'min'],
@@ -685,7 +713,8 @@ $('#cmp').addEventListener('change', ev => {
     CMP[i].ch = d.ch;
     if (!c.swap) { CMP[i].en = d.en; CMP[i].gb = d.gb; }
   } else CMP[i][k] = v;
-  if (k === 'en' && GB[CMP[i].gb].ev !== EN[v].ev) { const g = GB.findIndex(g => g.ti === EN[v].ti); if (g >= 0) CMP[i].gb = g; }
+  if (k === 'model' || k === 'gb') CMP[i].gear = null;  // another gearbox: back to its top gear
+  if (k === 'en' && GB[CMP[i].gb].ev !== EN[v].ev) { const g = GB.findIndex(g => g.ti === EN[v].ti); if (g >= 0) { CMP[i].gb = g; CMP[i].gear = null; } }
   saveCmp(); renderCmp();
 });
 $('#cmp').addEventListener('click', ev => { const b = ev.target.closest('[data-del]'); if (b) { CMP.splice(+b.dataset.del, 1); saveCmp(); renderCmp(); } });
@@ -706,7 +735,7 @@ function fillChassis() {
 }
 $('#c-model').addEventListener('change', fillChassis);
 $('#c-ttyre').innerHTML = TRL_TYRES.map(([n, r], i) => `<option value="${i}">${esc(n)} · ${fmt(r, 1)}</option>`).join('');
-['#c-cargo', '#c-trl', '#c-axles', '#c-ttyre', '#c-spd', '#c-grd', '#c-dist', '#c-corr', '#c-model', '#c-chs', '#c-swap'].forEach(id => ['input', 'change'].forEach(ev => $(id).addEventListener(ev, () => {
+['#c-cargo', '#c-trl', '#c-axles', '#c-ttyre', '#c-spd', '#c-grd', '#c-band', '#c-dist', '#c-corr', '#c-model', '#c-chs', '#c-swap'].forEach(id => ['input', 'change'].forEach(ev => $(id).addEventListener(ev, () => {
   clearTimeout(fitTimer); fitTimer = setTimeout(() => { renderFit(); renderEco(); renderCmp(); }, 150);
 })));
 
@@ -725,6 +754,7 @@ const DICT_EN = {
  "Шины прицепа": "Trailer tyres",
  "Скорость,": "Speed,",
  "Держать на подъёме, %": "Hold on a grade, %",
+ "Запас от начала полки, об/мин": "Margin above plateau start, rpm",
  "Маршрут,": "Route,",
  "Поправка на дорогу, %": "Road correction, %",
  "Грузовик": "Truck",
@@ -736,11 +766,11 @@ const DICT_EN = {
  "Модель / шасси": "Model / chassis",
  "Двигатель": "Engine",
  "КПП · шины": "Gearbox · tyres",
- "Об/мин на высшей": "Rpm in top gear",
+ "Об/мин · передача": "Rpm · gear",
  "Полка": "Plateau",
  "Расход по ровной": "Flat-road fuel",
- "Макс. подъём на высшей": "Max grade in top gear",
- "Подбирается самая экономичная сборка на заданной скорости: на высшей передаче обороты от начала полки до +50 об/мин, подъём держит. Расход считается по формуле самой игры (из exe): мощность двигателя плюс его внутреннее трение (20 Н·м на литр объёма), выгоднее всего около 1150 об/мин; шины тягача берутся лучшие. Навык экономии в игре на реальный расход не влияет, только на оценку запаса хода. «Поправка на дорогу» — насколько реальный рейс тратит больше ровной дороги: по трём рейсам от −6 до +14%. Свап без модов невозможен.": "The most economical build at the set speed is picked: top gear between the start of the torque plateau and +50 rpm, the grade is held. Fuel uses the game's own formula (from the exe): engine power plus its internal friction (20 N·m per litre of displacement), cheapest around 1150 rpm; the best truck tyres are assumed. With realistic fuel consumption on, the Eco driving skill does not change real consumption, only the range estimate. “Road correction” is how much more a real trip uses than a flat road: −6 to +14% over three trips. Swapping is not possible without mods.",
+ "Макс. подъём на этой передаче": "Max grade in this gear",
+ "Подбирается самая экономичная сборка на заданной скорости: на любой передаче любой КПП обороты от начала полки до заданного запаса (обычно +50 об/мин), подъём держит. Если это не высшая передача, держи её вручную: автомат может переключиться выше. Расход считается по формуле самой игры (из exe): мощность двигателя плюс его внутреннее трение (20 Н·м на литр объёма), выгоднее всего около 1150 об/мин; шины тягача берутся лучшие. Навык экономии в игре на реальный расход не влияет, только на оценку запаса хода. «Поправка на дорогу» — насколько реальный рейс тратит больше ровной дороги: по трём рейсам от −6 до +14%. Свап без модов невозможен.": "The most economical build at the set speed is picked: any gear of any gearbox between the start of the torque plateau and the set margin (usually +50 rpm), the grade is held. If that is not the top gear, hold it manually: an automatic may shift up. Fuel uses the game's own formula (from the exe): engine power plus its internal friction (20 N·m per litre of displacement), cheapest around 1150 rpm; the best truck tyres are assumed. With realistic fuel consumption on, the Eco driving skill does not change real consumption, only the range estimate. “Road correction” is how much more a real trip uses than a flat road: −6 to +14% over three trips. Swapping is not possible without mods.",
  "Сравнение": "Comparison",
  "Добавить колонку": "Add column",
  "Очистить": "Clear",
@@ -823,7 +853,7 @@ if (IMP) {
   Object.assign($('#c-trl'), {value: 6600, max: 66000, step: 100});
   Object.assign($('#c-spd'), {value: 50, min: 20, max: 80});
 }
-const KEEP = ['#c-axles', '#c-ttyre', '#c-grd', '#c-corr', '#c-model'];
+const KEEP = ['#c-axles', '#c-ttyre', '#c-grd', '#c-band', '#c-corr', '#c-model'];
 try {
   const k = JSON.parse(sessionStorage.getItem('trucks-carry') || 'null');
   sessionStorage.removeItem('trucks-carry');
